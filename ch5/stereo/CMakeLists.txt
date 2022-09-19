@@ -1,3 +1,4 @@
+set( Pangolin_DIR "/home/rypan/repos/pangolin/install/lib/cmake/Pangolin" )
 find_package(Pangolin REQUIRED)
 
 add_executable(stereoVision stereoVision.cpp)

@@ -1,75 +1,72 @@
-#include <iostream>
-#include <opencv2/core/core.hpp>
-#include <opencv2/features2d/features2d.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/calib3d/calib3d.hpp>
-#include <Eigen/Core>
-#include <Eigen/Dense>
-#include <Eigen/Geometry>
-#include <Eigen/SVD>
-#include <g2o/core/base_vertex.h>
 #include <g2o/core/base_unary_edge.h>
+#include <g2o/core/base_vertex.h>
 #include <g2o/core/block_solver.h>
 #include <g2o/core/optimization_algorithm_gauss_newton.h>
 #include <g2o/core/optimization_algorithm_levenberg.h>
 #include <g2o/solvers/dense/linear_solver_dense.h>
+
+#include <Eigen/Core>
+#include <Eigen/Dense>
+#include <Eigen/Geometry>
+#include <Eigen/SVD>
 #include <chrono>
+#include <iostream>
+#include <opencv2/calib3d/calib3d.hpp>
+#include <opencv2/core/core.hpp>
+#include <opencv2/features2d/features2d.hpp>
+#include <opencv2/highgui/highgui.hpp>
+// 保证和 opencv3 的兼容性，比如 CV_LOAD_IMAGE_COLOR
+#include <opencv2/imgcodecs/legacy/constants_c.h>
+
 #include <sophus/se3.hpp>
 
 using namespace std;
 using namespace cv;
 
-void find_feature_matches(
-  const Mat &img_1, const Mat &img_2,
-  std::vector<KeyPoint> &keypoints_1,
-  std::vector<KeyPoint> &keypoints_2,
-  std::vector<DMatch> &matches);
+void find_feature_matches(const Mat &img_1, const Mat &img_2,
+                          std::vector<KeyPoint> &keypoints_1,
+                          std::vector<KeyPoint> &keypoints_2,
+                          std::vector<DMatch> &matches);
 
 // 像素坐标转相机归一化坐标
 Point2d pixel2cam(const Point2d &p, const Mat &K);
 
-void pose_estimation_3d3d(
-  const vector<Point3f> &pts1,
-  const vector<Point3f> &pts2,
-  Mat &R, Mat &t
-);
+void pose_estimation_3d3d(const vector<Point3f> &pts1,
+                          const vector<Point3f> &pts2, Mat &R, Mat &t);
 
-void bundleAdjustment(
-  const vector<Point3f> &points_3d,
-  const vector<Point3f> &points_2d,
-  Mat &R, Mat &t
-);
+void bundleAdjustment(const vector<Point3f> &points_3d,
+                      const vector<Point3f> &points_2d, Mat &R, Mat &t);
 
 /// vertex and edges used in g2o ba
 class VertexPose : public g2o::BaseVertex<6, Sophus::SE3d> {
-public:
+ public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 
-  virtual void setToOriginImpl() override {
-    _estimate = Sophus::SE3d();
-  }
+  virtual void setToOriginImpl() override { _estimate = Sophus::SE3d(); }
 
   /// left multiplication on SE3
   virtual void oplusImpl(const double *update) override {
     Eigen::Matrix<double, 6, 1> update_eigen;
-    update_eigen << update[0], update[1], update[2], update[3], update[4], update[5];
+    update_eigen << update[0], update[1], update[2], update[3], update[4],
+        update[5];
     _estimate = Sophus::SE3d::exp(update_eigen) * _estimate;
   }
 
-  virtual bool read(istream &in) override {}
+  virtual bool read(istream &in) override { return 1; }
 
-  virtual bool write(ostream &out) const override {}
+  virtual bool write(ostream &out) const override { return 1; }
 };
 
 /// g2o edge
-class EdgeProjectXYZRGBDPoseOnly : public g2o::BaseUnaryEdge<3, Eigen::Vector3d, VertexPose> {
-public:
+class EdgeProjectXYZRGBDPoseOnly
+    : public g2o::BaseUnaryEdge<3, Eigen::Vector3d, VertexPose> {
+ public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 
   EdgeProjectXYZRGBDPoseOnly(const Eigen::Vector3d &point) : _point(point) {}
 
   virtual void computeError() override {
-    const VertexPose *pose = static_cast<const VertexPose *> ( _vertices[0] );
+    const VertexPose *pose = static_cast<const VertexPose *>(_vertices[0]);
     _error = _measurement - pose->estimate() * _point;
   }
 
@@ -81,22 +78,19 @@ public:
     _jacobianOplusXi.block<3, 3>(0, 3) = Sophus::SO3d::hat(xyz_trans);
   }
 
-  bool read(istream &in) {}
+  bool read(istream &in) { return 1; }
 
-  bool write(ostream &out) const {}
+  bool write(ostream &out) const { return 1; }
 
-protected:
+ protected:
   Eigen::Vector3d _point;
 };
 
 int main(int argc, char **argv) {
-  if (argc != 5) {
-    cout << "usage: pose_estimation_3d3d img1 img2 depth1 depth2" << endl;
-    return 1;
-  }
-  //-- 读取图像
-  Mat img_1 = imread(argv[1], CV_LOAD_IMAGE_COLOR);
-  Mat img_2 = imread(argv[2], CV_LOAD_IMAGE_COLOR);
+  string first_file = "./1.png";
+  string second_file = "./2.png";
+  Mat img_1 = imread(first_file, CV_LOAD_IMAGE_COLOR);
+  Mat img_2 = imread(second_file, CV_LOAD_IMAGE_COLOR);
 
   vector<KeyPoint> keypoints_1, keypoints_2;
   vector<DMatch> matches;
@@ -104,25 +98,37 @@ int main(int argc, char **argv) {
   cout << "一共找到了" << matches.size() << "组匹配点" << endl;
 
   // 建立3D点
-  Mat depth1 = imread(argv[3], CV_LOAD_IMAGE_UNCHANGED);       // 深度图为16位无符号数，单通道图像
-  Mat depth2 = imread(argv[4], CV_LOAD_IMAGE_UNCHANGED);       // 深度图为16位无符号数，单通道图像
+  string depth_1 = "./1_depth.png";
+  string depth_2 = "./2_depth.png";
+  Mat depth1 = imread(depth_1, CV_LOAD_IMAGE_UNCHANGED);
+  Mat depth2 = imread(depth_2, CV_LOAD_IMAGE_UNCHANGED);
+
   Mat K = (Mat_<double>(3, 3) << 520.9, 0, 325.1, 0, 521.0, 249.7, 0, 0, 1);
   vector<Point3f> pts1, pts2;
 
-  for (DMatch m:matches) {
-    ushort d1 = depth1.ptr<unsigned short>(int(keypoints_1[m.queryIdx].pt.y))[int(keypoints_1[m.queryIdx].pt.x)];
-    ushort d2 = depth2.ptr<unsigned short>(int(keypoints_2[m.trainIdx].pt.y))[int(keypoints_2[m.trainIdx].pt.x)];
-    if (d1 == 0 || d2 == 0)   // bad depth
+  for (DMatch m : matches) {
+    // 根据匹配关系，找对应点的深度值；
+    ushort d1 = depth1.ptr<unsigned short>(
+        int(keypoints_1[m.queryIdx].pt.y))[int(keypoints_1[m.queryIdx].pt.x)];
+    ushort d2 = depth2.ptr<unsigned short>(
+        int(keypoints_2[m.trainIdx].pt.y))[int(keypoints_2[m.trainIdx].pt.x)];
+    if (d1 == 0 || d2 == 0)  // bad depth
       continue;
+
     Point2d p1 = pixel2cam(keypoints_1[m.queryIdx].pt, K);
     Point2d p2 = pixel2cam(keypoints_2[m.trainIdx].pt, K);
+
+    // 对深度值进行统一缩放
     float dd1 = float(d1) / 5000.0;
     float dd2 = float(d2) / 5000.0;
+
+    // 得到了两个相机坐标系下的三维点：ICP问题输入的三维点对
     pts1.push_back(Point3f(p1.x * dd1, p1.y * dd1, dd1));
     pts2.push_back(Point3f(p2.x * dd2, p2.y * dd2, dd2));
   }
 
   cout << "3d-3d pairs: " << pts1.size() << endl;
+
   Mat R, t;
   pose_estimation_3d3d(pts1, pts2, R, t);
   cout << "ICP via SVD results: " << endl;
@@ -132,15 +138,14 @@ int main(int argc, char **argv) {
   cout << "t_inv = " << -R.t() * t << endl;
 
   cout << "calling bundle adjustment" << endl;
-
   bundleAdjustment(pts1, pts2, R, t);
 
   // verify p1 = R * p2 + t
   for (int i = 0; i < 5; i++) {
     cout << "p1 = " << pts1[i] << endl;
     cout << "p2 = " << pts2[i] << endl;
-    cout << "(R*p2+t) = " <<
-         R * (Mat_<double>(3, 1) << pts2[i].x, pts2[i].y, pts2[i].z) + t
+    cout << "R * p2 + t = "
+         << R * (Mat_<double>(3, 1) << pts2[i].x, pts2[i].y, pts2[i].z) + t
          << endl;
     cout << endl;
   }
@@ -157,8 +162,10 @@ void find_feature_matches(const Mat &img_1, const Mat &img_2,
   Ptr<DescriptorExtractor> descriptor = ORB::create();
   // use this if you are in OpenCV2
   // Ptr<FeatureDetector> detector = FeatureDetector::create ( "ORB" );
-  // Ptr<DescriptorExtractor> descriptor = DescriptorExtractor::create ( "ORB" );
-  Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create("BruteForce-Hamming");
+  // Ptr<DescriptorExtractor> descriptor = DescriptorExtractor::create ( "ORB"
+  // );
+  Ptr<DescriptorMatcher> matcher =
+      DescriptorMatcher::create("BruteForce-Hamming");
   //-- 第一步:检测 Oriented FAST 角点位置
   detector->detect(img_1, keypoints_1);
   detector->detect(img_2, keypoints_2);
@@ -175,7 +182,8 @@ void find_feature_matches(const Mat &img_1, const Mat &img_2,
   //-- 第四步:匹配点对筛选
   double min_dist = 10000, max_dist = 0;
 
-  //找出所有匹配之间的最小距离和最大距离, 即是最相似的和最不相似的两组点之间的距离
+  //找出所有匹配之间的最小距离和最大距离,
+  //即是最相似的和最不相似的两组点之间的距离
   for (int i = 0; i < descriptors_1.rows; i++) {
     double dist = match[i].distance;
     if (dist < min_dist) min_dist = dist;
@@ -194,16 +202,14 @@ void find_feature_matches(const Mat &img_1, const Mat &img_2,
 }
 
 Point2d pixel2cam(const Point2d &p, const Mat &K) {
-  return Point2d(
-    (p.x - K.at<double>(0, 2)) / K.at<double>(0, 0),
-    (p.y - K.at<double>(1, 2)) / K.at<double>(1, 1)
-  );
+  return Point2d((p.x - K.at<double>(0, 2)) / K.at<double>(0, 0),
+                 (p.y - K.at<double>(1, 2)) / K.at<double>(1, 1));
 }
 
 void pose_estimation_3d3d(const vector<Point3f> &pts1,
-                          const vector<Point3f> &pts2,
-                          Mat &R, Mat &t) {
-  Point3f p1, p2;     // center of mass
+                          const vector<Point3f> &pts2, Mat &R, Mat &t) {
+  // 先求质心（center of mass）
+  Point3f p1, p2;
   int N = pts1.size();
   for (int i = 0; i < N; i++) {
     p1 += pts1[i];
@@ -211,58 +217,60 @@ void pose_estimation_3d3d(const vector<Point3f> &pts1,
   }
   p1 = Point3f(Vec3f(p1) / N);
   p2 = Point3f(Vec3f(p2) / N);
-  vector<Point3f> q1(N), q2(N); // remove the center
+  // 各点和质心作差
+  vector<Point3f> q1(N), q2(N);
   for (int i = 0; i < N; i++) {
     q1[i] = pts1[i] - p1;
     q2[i] = pts2[i] - p2;
   }
 
-  // compute q1*q2^T
+  // 计算待分解矩阵 W=Σq1*q2^T
   Eigen::Matrix3d W = Eigen::Matrix3d::Zero();
   for (int i = 0; i < N; i++) {
-    W += Eigen::Vector3d(q1[i].x, q1[i].y, q1[i].z) * Eigen::Vector3d(q2[i].x, q2[i].y, q2[i].z).transpose();
+    W += Eigen::Vector3d(q1[i].x, q1[i].y, q1[i].z) *
+         Eigen::Vector3d(q2[i].x, q2[i].y, q2[i].z).transpose();
   }
   cout << "W=" << W << endl;
 
   // SVD on W
-  Eigen::JacobiSVD<Eigen::Matrix3d> svd(W, Eigen::ComputeFullU | Eigen::ComputeFullV);
+  Eigen::JacobiSVD<Eigen::Matrix3d> svd(
+      W, Eigen::ComputeFullU | Eigen::ComputeFullV);
   Eigen::Matrix3d U = svd.matrixU();
   Eigen::Matrix3d V = svd.matrixV();
 
   cout << "U=" << U << endl;
   cout << "V=" << V << endl;
 
+  // 直接得出 R 的形式
   Eigen::Matrix3d R_ = U * (V.transpose());
   if (R_.determinant() < 0) {
     R_ = -R_;
   }
-  Eigen::Vector3d t_ = Eigen::Vector3d(p1.x, p1.y, p1.z) - R_ * Eigen::Vector3d(p2.x, p2.y, p2.z);
+  Eigen::Vector3d t_ = Eigen::Vector3d(p1.x, p1.y, p1.z) -
+                       R_ * Eigen::Vector3d(p2.x, p2.y, p2.z);
 
-  // convert to cv::Mat
-  R = (Mat_<double>(3, 3) <<
-    R_(0, 0), R_(0, 1), R_(0, 2),
-    R_(1, 0), R_(1, 1), R_(1, 2),
-    R_(2, 0), R_(2, 1), R_(2, 2)
-  );
+  // 写成矩阵形式；
+  R = (Mat_<double>(3, 3) << R_(0, 0), R_(0, 1), R_(0, 2), R_(1, 0), R_(1, 1),
+       R_(1, 2), R_(2, 0), R_(2, 1), R_(2, 2));
   t = (Mat_<double>(3, 1) << t_(0, 0), t_(1, 0), t_(2, 0));
 }
 
-void bundleAdjustment(
-  const vector<Point3f> &pts1,
-  const vector<Point3f> &pts2,
-  Mat &R, Mat &t) {
+void bundleAdjustment(const vector<Point3f> &pts1, const vector<Point3f> &pts2,
+                      Mat &R, Mat &t) {
   // 构建图优化，先设定g2o
   typedef g2o::BlockSolverX BlockSolverType;
-  typedef g2o::LinearSolverDense<BlockSolverType::PoseMatrixType> LinearSolverType; // 线性求解器类型
+  typedef g2o::LinearSolverDense<BlockSolverType::PoseMatrixType>
+      LinearSolverType;  // 线性求解器类型
+
   // 梯度下降方法，可以从GN, LM, DogLeg 中选
   auto solver = new g2o::OptimizationAlgorithmLevenberg(
-    g2o::make_unique<BlockSolverType>(g2o::make_unique<LinearSolverType>()));
-  g2o::SparseOptimizer optimizer;     // 图模型
-  optimizer.setAlgorithm(solver);   // 设置求解器
-  optimizer.setVerbose(true);       // 打开调试输出
+      g2o::make_unique<BlockSolverType>(g2o::make_unique<LinearSolverType>()));
+  g2o::SparseOptimizer optimizer;  // 图模型
+  optimizer.setAlgorithm(solver);  // 设置求解器
+  optimizer.setVerbose(true);      // 打开调试输出
 
   // vertex
-  VertexPose *pose = new VertexPose(); // camera pose
+  VertexPose *pose = new VertexPose();  // camera pose
   pose->setId(0);
   pose->setEstimate(Sophus::SE3d());
   optimizer.addVertex(pose);
@@ -270,10 +278,9 @@ void bundleAdjustment(
   // edges
   for (size_t i = 0; i < pts1.size(); i++) {
     EdgeProjectXYZRGBDPoseOnly *edge = new EdgeProjectXYZRGBDPoseOnly(
-      Eigen::Vector3d(pts2[i].x, pts2[i].y, pts2[i].z));
+        Eigen::Vector3d(pts2[i].x, pts2[i].y, pts2[i].z));
     edge->setVertex(0, pose);
-    edge->setMeasurement(Eigen::Vector3d(
-      pts1[i].x, pts1[i].y, pts1[i].z));
+    edge->setMeasurement(Eigen::Vector3d(pts1[i].x, pts1[i].y, pts1[i].z));
     edge->setInformation(Eigen::Matrix3d::Identity());
     optimizer.addEdge(edge);
   }
@@ -282,8 +289,10 @@ void bundleAdjustment(
   optimizer.initializeOptimization();
   optimizer.optimize(10);
   chrono::steady_clock::time_point t2 = chrono::steady_clock::now();
-  chrono::duration<double> time_used = chrono::duration_cast<chrono::duration<double>>(t2 - t1);
-  cout << "optimization costs time: " << time_used.count() << " seconds." << endl;
+  chrono::duration<double> time_used =
+      chrono::duration_cast<chrono::duration<double>>(t2 - t1);
+  cout << "optimization costs time: " << time_used.count() << " seconds."
+       << endl;
 
   cout << endl << "after optimization:" << endl;
   cout << "T=\n" << pose->estimate().matrix() << endl;
@@ -291,10 +300,7 @@ void bundleAdjustment(
   // convert to cv::Mat
   Eigen::Matrix3d R_ = pose->estimate().rotationMatrix();
   Eigen::Vector3d t_ = pose->estimate().translation();
-  R = (Mat_<double>(3, 3) <<
-    R_(0, 0), R_(0, 1), R_(0, 2),
-    R_(1, 0), R_(1, 1), R_(1, 2),
-    R_(2, 0), R_(2, 1), R_(2, 2)
-  );
+  R = (Mat_<double>(3, 3) << R_(0, 0), R_(0, 1), R_(0, 2), R_(1, 0), R_(1, 1),
+       R_(1, 2), R_(2, 0), R_(2, 1), R_(2, 2));
   t = (Mat_<double>(3, 1) << t_(0, 0), t_(1, 0), t_(2, 0));
 }

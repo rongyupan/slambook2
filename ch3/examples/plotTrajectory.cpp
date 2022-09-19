@@ -1,19 +1,28 @@
 #include <pangolin/pangolin.h>
-#include <Eigen/Core>
 #include <unistd.h>
+
+#include <Eigen/Core>
+#include <Eigen/Geometry>
 
 // 本例演示了如何画出一个预先存储的轨迹
 
 using namespace std;
 using namespace Eigen;
 
-// path to trajectory file
-string trajectory_file = "./examples/trajectory.txt";
+// 目录结构：
+// example
+//   |-- plotTrajectory.cpp
+// build （在本目录运行：./example/plotTrajectory）
+//   |-- example
+//      |-- plotTrajectory
+// 所以下面的 ..
+// 是相对于执行指令（build）一级的，而不是可执行文件目录（build/example）；
+string trajectory_file = "../examples/trajectory.txt";
 
+// 这里指定了 vector 的 allocator 类型，算比较高级的用法了，可以先不用管
 void DrawTrajectory(vector<Isometry3d, Eigen::aligned_allocator<Isometry3d>>);
 
 int main(int argc, char **argv) {
-
   vector<Isometry3d, Eigen::aligned_allocator<Isometry3d>> poses;
   ifstream fin(trajectory_file);
   if (!fin) {
@@ -36,7 +45,8 @@ int main(int argc, char **argv) {
 }
 
 /*******************************************************************************************/
-void DrawTrajectory(vector<Isometry3d, Eigen::aligned_allocator<Isometry3d>> poses) {
+void DrawTrajectory(
+    vector<Isometry3d, Eigen::aligned_allocator<Isometry3d>> poses) {
   // create pangolin window and plot the trajectory
   pangolin::CreateWindowAndBind("Trajectory Viewer", 1024, 768);
   glEnable(GL_DEPTH_TEST);
@@ -44,13 +54,12 @@ void DrawTrajectory(vector<Isometry3d, Eigen::aligned_allocator<Isometry3d>> pos
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
   pangolin::OpenGlRenderState s_cam(
-    pangolin::ProjectionMatrix(1024, 768, 500, 500, 512, 389, 0.1, 1000),
-    pangolin::ModelViewLookAt(0, -0.1, -1.8, 0, 0, 0, 0.0, -1.0, 0.0)
-  );
+      pangolin::ProjectionMatrix(1024, 768, 500, 500, 512, 389, 0.1, 1000),
+      pangolin::ModelViewLookAt(0, -0.1, -1.8, 0, 0, 0, 0.0, -1.0, 0.0));
 
   pangolin::View &d_cam = pangolin::CreateDisplay()
-    .SetBounds(0.0, 1.0, 0.0, 1.0, -1024.0f / 768.0f)
-    .SetHandler(new pangolin::Handler3D(s_cam));
+                              .SetBounds(0.0, 1.0, 0.0, 1.0, -1024.0f / 768.0f)
+                              .SetHandler(new pangolin::Handler3D(s_cam));
 
   while (pangolin::ShouldQuit() == false) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -59,18 +68,19 @@ void DrawTrajectory(vector<Isometry3d, Eigen::aligned_allocator<Isometry3d>> pos
     glLineWidth(2);
     for (size_t i = 0; i < poses.size(); i++) {
       // 画每个位姿的三个坐标轴
-      Vector3d Ow = poses[i].translation();
+      // 先指定原点，再指定三个轴上的三个点，便能通过连线画出三个坐标轴了。
+      Vector3d Ow = poses[i].translation();   // 返回 poses[i] 的向量表示
       Vector3d Xw = poses[i] * (0.1 * Vector3d(1, 0, 0));
       Vector3d Yw = poses[i] * (0.1 * Vector3d(0, 1, 0));
       Vector3d Zw = poses[i] * (0.1 * Vector3d(0, 0, 1));
       glBegin(GL_LINES);
-      glColor3f(1.0, 0.0, 0.0);
+      glColor3f(1.0, 0.0, 0.0);  // R
       glVertex3d(Ow[0], Ow[1], Ow[2]);
       glVertex3d(Xw[0], Xw[1], Xw[2]);
-      glColor3f(0.0, 1.0, 0.0);
+      glColor3f(0.0, 1.0, 0.0);  // G
       glVertex3d(Ow[0], Ow[1], Ow[2]);
       glVertex3d(Yw[0], Yw[1], Yw[2]);
-      glColor3f(0.0, 0.0, 1.0);
+      glColor3f(0.0, 0.0, 1.0);  // B
       glVertex3d(Ow[0], Ow[1], Ow[2]);
       glVertex3d(Zw[0], Zw[1], Zw[2]);
       glEnd();
@@ -85,6 +95,6 @@ void DrawTrajectory(vector<Isometry3d, Eigen::aligned_allocator<Isometry3d>> pos
       glEnd();
     }
     pangolin::FinishFrame();
-    usleep(5000);   // sleep 5 ms
+    usleep(5000);  // sleep 5 ms
   }
 }

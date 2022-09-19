@@ -1,8 +1,9 @@
-#include <iostream>
-#include <vector>
-#include <algorithm>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
+
+#include <algorithm>
+#include <iostream>
+#include <vector>
 
 using namespace std;
 using namespace Eigen;
@@ -19,6 +20,6 @@ int main(int argc, char** argv) {
   T2w.pretranslate(t2);
 
   Vector3d p2 = T2w * T1w.inverse() * p1;
-  cout << endl << p2.transpose() << endl;
+  cout << p2.transpose() << endl;
   return 0;
 }
