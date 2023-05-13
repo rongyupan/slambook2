@@ -45,6 +45,11 @@ int main(int argc, char **argv) {
             // 根据双目模型计算 point 的位置
             double x = (u - cx) / fx;
             double y = (v - cy) / fy;
+            
+            // 相机系到物理系：x' = f*x/z
+            // 相机系到像素系：u = fx*x/z + cx = α*f*x/z + cx
+            // 所以可以推得：u = α*x' + cx
+            // z= f*b/d = α*f*b/α*d = fx*b/α(x'_left - x'_right) = fx*b/(u_left - u_right)
             double depth = fx * b / (disparity.at<float>(v, u));
             point[0] = x * depth;
             point[1] = y * depth;
